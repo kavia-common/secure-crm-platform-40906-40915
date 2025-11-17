@@ -3,6 +3,19 @@
 ## Table of Contents
 - Architecture Master
   - kavia-docs/Architecture_Master.md
+- UI Design
+  - kavia-docs/ui/UI_Master.md
+  - kavia-docs/ui/Styles.md
+  - kavia-docs/ui/components/Components.md
+  - Screens
+    - kavia-docs/ui/screens/Dashboard.md
+    - kavia-docs/ui/screens/Customer360.md
+    - kavia-docs/ui/screens/ServiceRequest_Form.md
+    - kavia-docs/ui/screens/ServiceRequest_Detail.md
+    - kavia-docs/ui/screens/Complaints.md
+    - kavia-docs/ui/screens/OmniChannel_Inbox.md
+    - kavia-docs/ui/screens/Settings.md
+    - kavia-docs/ui/screens/Auth_Login.md
 - Module Design Specifications
   - kavia-docs/modules/01-Auth_And_RBAC.md
   - kavia-docs/modules/02-Customer_360.md

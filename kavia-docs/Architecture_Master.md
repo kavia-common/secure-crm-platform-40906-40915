@@ -396,5 +396,5 @@ erDiagram
 ## 14. References
 - Backend: FastAPI health and OpenAPI generator (src/api/main.py, src/api/generate_openapi.py)
 - Database: PostgreSQL startup/backup/restore scripts (startup.sh, backup_db.sh, restore_db.sh)
-- Frontend: React scaffold (theme toggle) as baseline for UI
+- Frontend: React scaffold (theme toggle) as baseline for UI. Detailed UI/UX design specs are documented under kavia-docs/ui/, including master guidelines, components, styles, and per-screen specifications aligned to Heritage Brown/Classic.
 
