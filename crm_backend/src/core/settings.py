@@ -13,7 +13,11 @@ class AppSettings(BaseSettings):
 
     Environment variables:
     - DATABASE_URL: Async SQLAlchemy URL for PostgreSQL (e.g., postgresql+asyncpg://user:pass@host:5432/db)
-    - JWT_SECRET: Secret used for signing JWTs (stub for now)
+    - JWT_SECRET: Secret used for signing JWT access tokens
+    - JWT_REFRESH_SECRET: Secret used for signing JWT refresh tokens
+    - ACCESS_TOKEN_EXPIRES_MIN: Access token lifetime in minutes (default 15)
+    - REFRESH_TOKEN_EXPIRES_MIN: Refresh token lifetime in minutes (default 43200 = 30 days)
+    - JWT_ALGORITHM: Signing algorithm (default HS256)
     - CORS_ALLOWED_ORIGINS: Comma-separated origins. Default allows http://localhost:3000 for dev.
     - ALLOWED_ORIGINS: Legacy comma-separated origins (fallback support).
     - FRONTEND_URL: Single origin for the frontend (e.g., https://host:3000)
@@ -24,7 +28,11 @@ class AppSettings(BaseSettings):
     DATABASE_URL: str = Field(default="", description="SQLAlchemy async URL for PostgreSQL via asyncpg")
 
     # Security
-    JWT_SECRET: str = Field(default="dev-secret", description="JWT secret (development default)")
+    JWT_SECRET: str = Field(default="dev-secret", description="JWT secret for access tokens (development default)")
+    JWT_REFRESH_SECRET: str = Field(default="dev-refresh-secret", description="JWT secret for refresh tokens")
+    ACCESS_TOKEN_EXPIRES_MIN: int = Field(default=15, description="Access token expiry (minutes)")
+    REFRESH_TOKEN_EXPIRES_MIN: int = Field(default=43200, description="Refresh token expiry (minutes, default 30 days)")
+    JWT_ALGORITHM: str = Field(default="HS256", description="JWT signing algorithm")
 
     # CORS
     CORS_ALLOWED_ORIGINS: str = Field(

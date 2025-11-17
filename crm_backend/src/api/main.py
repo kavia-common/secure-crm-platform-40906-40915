@@ -4,6 +4,7 @@ import os
 import uuid
 from typing import Any, Dict, List, Optional
 
+import jwt
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRouter
@@ -13,6 +14,7 @@ from starlette.responses import JSONResponse
 
 from src.core.settings import get_settings
 from src.core.db import check_db_connection
+from src.core.security import create_access_token, create_refresh_token, decode_access_token, decode_refresh_token
 from src.api.health import router as health_router
 
 # =========================
@@ -308,7 +310,7 @@ class Preferences(BaseModel):
 
 
 # ========================
-# Auth and RBAC Stubs
+# Auth and RBAC (JWT)
 # ========================
 
 def _gen_id() -> str:
@@ -340,9 +342,13 @@ DB: Dict[str, Dict[str, Dict[str, Any]]] = {
     "audit": [],
 }
 
+# Simple in-memory token blocklist (stores JWT jti values)
+TOKEN_BLOCKLIST: set[str] = set()
+
+
 # PUBLIC_INTERFACE
 class AuthUser(BaseModel):
-    """Authenticated user claims stub."""
+    """Authenticated user claims DTO."""
 
     user_id: str
     roles: List[str] = Field(default_factory=list)
@@ -356,24 +362,40 @@ def get_env(name: str, default: Optional[str] = None) -> str:
     return val
 
 
+def _extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
+    if not authorization:
+        return None
+    parts = authorization.split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    return parts[1].strip() or None
+
+
 # PUBLIC_INTERFACE
 async def jwt_auth_dependency(authorization: Optional[str] = Header(default=None)) -> AuthUser:
-    """Authenticate JWT token (mock). Validates presence and returns stub user."""
-    if not authorization or not authorization.lower().startswith("bearer "):
-        # 401 standardized
-        raise HTTPException(status_code=401, detail=_error("auth.missing_token", "Missing or invalid Authorization header").body.decode() if isinstance(_error("x","x"), JSONResponse) else "Unauthorized")
-    token = authorization.split(" ", 1)[1].strip()
-    if token == "invalid":
-        raise HTTPException(status_code=401, detail="Invalid token")
-    # Mock decode
-    # For demo: token 'admin' -> admin user, else 'user'
-    if token == "admin":
-        user_id = "00000000-0000-0000-0000-000000000001"
-        roles = ["admin"]
-    else:
-        user_id = "00000000-0000-0000-0000-000000000002"
-        roles = ["agent"]
-    return AuthUser(user_id=user_id, roles=roles)
+    """
+    Authenticate JWT access token from Authorization header and enforce blocklist.
+    Returns AuthUser on success; raises HTTPException(401/403) otherwise.
+    """
+    token = _extract_bearer_token(authorization)
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+
+    try:
+        claims = decode_access_token(token)
+        jti = str(claims.get("jti", ""))
+        if not jti or jti in TOKEN_BLOCKLIST:
+            raise HTTPException(status_code=401, detail="Token is invalidated or malformed")
+
+        roles = claims.get("roles") or []
+        sub = str(claims.get("sub") or "")
+        if not sub:
+            raise HTTPException(status_code=401, detail="Invalid token subject")
+        return AuthUser(user_id=sub, roles=list(roles))
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError as ex:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(ex) or 'invalid'}")
 
 
 def require_roles(*required_roles: str):
@@ -556,41 +578,132 @@ async def ws_inbox(websocket: WebSocket):
 auth_router = APIRouter(prefix=API_PREFIX + "/auth", tags=["Auth"])
 
 
-@auth_router.post("/login", response_model=TokenPair, summary="Login")
+@auth_router.post(
+    "/login",
+    response_model=TokenPair,
+    summary="Login",
+    description="Authenticate credentials and issue JWT access and refresh tokens. Demo accepts any credentials; 'admin' username grants admin role.",
+)
 def login(body: LoginRequest):
     """
-    Authenticate user and issue token pair.
-    For demo, any credentials are accepted; 'admin' username grants admin role via token value.
+    Entry point: POST /api/v1/auth/login
+
+    Request:
+    - username: str
+    - password: str
+
+    Returns:
+    - TokenPair: { access_token, refresh_token, token_type }
     """
-    access = "admin" if body.username.lower() == "admin" else "user"
-    refresh = "refresh-" + _gen_id()
-    return TokenPair(access_token=access, refresh_token=refresh)
+    # Demo: accept all credentials; real system would verify with hashed password in DB
+    username = body.username.strip()
+    roles = ["admin"] if username.lower() == "admin" else ["agent"]
+    user_id = "00000000-0000-0000-0000-000000000001" if "admin" in roles else "00000000-0000-0000-0000-000000000002"
+
+    access_token, _ = create_access_token(user_id=user_id, username=username, roles=roles)
+    refresh_token, _ = create_refresh_token(user_id=user_id)
+
+    return TokenPair(access_token=access_token, refresh_token=refresh_token)
 
 
-@auth_router.post("/refresh", response_model=TokenPair, summary="Refresh Token")
+@auth_router.post(
+    "/refresh",
+    response_model=TokenPair,
+    summary="Refresh Token",
+    description="Refresh an expired access token using a valid refresh token.",
+)
 def refresh_token(refresh_token: str = Query(..., description="Refresh token")):
     """
-    Refresh tokens using provided refresh token (mock).
+    Entry point: POST /api/v1/auth/refresh
+
+    Query parameters:
+    - refresh_token: str
+
+    Returns a new token pair on success.
     """
-    if not refresh_token.startswith("refresh-"):
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
-    return TokenPair(access_token="user", refresh_token="refresh-" + _gen_id())
+    try:
+        claims = decode_refresh_token(refresh_token)
+        # Enforce refresh token not blacklisted
+        jti = str(claims.get("jti", ""))
+        if not jti or jti in TOKEN_BLOCKLIST:
+            raise HTTPException(status_code=401, detail="Refresh token invalidated")
+
+        user_id = str(claims.get("sub") or "")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid refresh token subject")
+
+        # For demo, infer username/roles from whether it's admin/user id above
+        is_admin = user_id.endswith("1")
+        username = "admin" if is_admin else "agent"
+        roles = ["admin"] if is_admin else ["agent"]
+
+        # Rotate refresh token, invalidate the old one
+        TOKEN_BLOCKLIST.add(jti)
+
+        new_access, _ = create_access_token(user_id=user_id, username=username, roles=roles)
+        new_refresh, new_refresh_claims = create_refresh_token(user_id=user_id)
+        return TokenPair(access_token=new_access, refresh_token=new_refresh)
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Refresh token expired")
+    except jwt.InvalidTokenError as ex:
+        raise HTTPException(status_code=401, detail=f"Invalid refresh token: {str(ex) or 'invalid'}")
 
 
-@auth_router.post("/logout", summary="Logout")
-def logout(user: AuthUser = Depends(jwt_auth_dependency)):
+@auth_router.post(
+    "/logout",
+    summary="Logout",
+    description="Invalidate the current access token and optional provided refresh token (blocklist).",
+)
+def logout(
+    authorization: Optional[str] = Header(None),
+    refresh_token: Optional[str] = Query(None, description="Optional refresh token to invalidate"),
+    _: AuthUser = Depends(jwt_auth_dependency),
+):
     """
-    Logout current session (mock: no state kept).
+    Entry point: POST /api/v1/auth/logout
+
+    Behavior:
+    - Extract current access token from Authorization header and blocklist its jti
+    - Optionally accept refresh_token query param and blocklist its jti
     """
+    # Invalidate access token jti
+    token = _extract_bearer_token(authorization)
+    if token:
+        try:
+            claims = decode_access_token(token)
+            jti = str(claims.get("jti", ""))
+            if jti:
+                TOKEN_BLOCKLIST.add(jti)
+        except Exception:
+            # ignore malformed tokens in logout
+            pass
+
+    if refresh_token:
+        try:
+            rclaims = decode_refresh_token(refresh_token)
+            rjti = str(rclaims.get("jti", ""))
+            if rjti:
+                TOKEN_BLOCKLIST.add(rjti)
+        except Exception:
+            pass
+
     return {"status": "ok"}
 
 
-@auth_router.get("/me", response_model=User, summary="Current User")
+@auth_router.get(
+    "/me",
+    response_model=User,
+    summary="Current User",
+    description="Return profile of the current authenticated user based on JWT claims.",
+)
 def me(user: AuthUser = Depends(jwt_auth_dependency)):
     """
-    Return profile for current user.
+    Entry point: GET /api/v1/auth/me
+
+    Returns basic profile built from JWT roles.
     """
-    return User(id=user.user_id, username="admin" if "admin" in user.roles else "agent", email=None, roles=user.roles)
+    username = "admin" if "admin" in user.roles else "agent"
+    return User(id=user.user_id, username=username, email=None, roles=user.roles)
 
 
 # ===========================
