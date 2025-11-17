@@ -43,8 +43,9 @@ def _base_claims(
     username: Optional[str] = None,
     roles: Optional[List[str]] = None,
     issuer: Optional[str] = None,
+    email: Optional[str] = None,
 ) -> Dict[str, Any]:
-    return {
+    base: Dict[str, Any] = {
         "sub": subject,
         "jti": str(uuid.uuid4()),
         "iat": int(_utcnow().timestamp()),
@@ -53,6 +54,10 @@ def _base_claims(
         "roles": roles or [],
         "iss": issuer or "crm-backend",
     }
+    # Optionally include email claim for clients that expect it (e.g., test user bypass)
+    if email:
+        base["email"] = email
+    return base
 
 
 # PUBLIC_INTERFACE
@@ -60,11 +65,13 @@ def create_access_token(
     user_id: str,
     username: str,
     roles: List[str],
+    email: Optional[str] = None,
 ) -> Tuple[str, Dict[str, Any]]:
     """
     Create a signed JWT access token with configured expiry.
 
     Returns tuple of (token, claims) so caller can access jti, exp, etc.
+    Optionally embeds email in JWT for clients that use it.
     """
     settings = get_settings()
     claims = _base_claims(
@@ -73,6 +80,7 @@ def create_access_token(
         username=username,
         roles=roles,
         issuer="crm-backend",
+        email=email,
     )
     exp = _expiry(int(settings.ACCESS_TOKEN_EXPIRES_MIN))
     payload = {**claims, "exp": exp}

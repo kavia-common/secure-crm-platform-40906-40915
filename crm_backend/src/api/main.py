@@ -352,6 +352,8 @@ class AuthUser(BaseModel):
 
     user_id: str
     roles: List[str] = Field(default_factory=list)
+    username: Optional[str] = None
+    email: Optional[str] = None
 
 
 def get_env(name: str, default: Optional[str] = None) -> str:
@@ -391,7 +393,9 @@ async def jwt_auth_dependency(authorization: Optional[str] = Header(default=None
         sub = str(claims.get("sub") or "")
         if not sub:
             raise HTTPException(status_code=401, detail="Invalid token subject")
-        return AuthUser(user_id=sub, roles=list(roles))
+        username = claims.get("username") or None
+        email = claims.get("email") or None
+        return AuthUser(user_id=sub, roles=list(roles), username=username, email=email)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError as ex:
@@ -582,7 +586,7 @@ auth_router = APIRouter(prefix=API_PREFIX + "/auth", tags=["Auth"])
     "/login",
     response_model=TokenPair,
     summary="Login",
-    description="Authenticate credentials and issue JWT access and refresh tokens. Demo accepts any credentials; 'admin' username grants admin role.",
+    description="Authenticate credentials and issue JWT access and refresh tokens. Test bypass: 'test@gmail.com' accepted when AUTH_ALLOW_TEST_USER=true; 'admin' username grants admin role in demo.",
 )
 def login(body: LoginRequest):
     """
@@ -595,8 +599,19 @@ def login(body: LoginRequest):
     Returns:
     - TokenPair: { access_token, refresh_token, token_type }
     """
-    # Demo: accept all credentials; real system would verify with hashed password in DB
+    # Demo/test behavior:
+    # If test login bypass is enabled and email matches, succeed without password verification.
     username = body.username.strip()
+    if _settings.AUTH_ALLOW_TEST_USER and username.lower() == _settings.TEST_USER_EMAIL.lower():
+        roles = ["agent"]  # safe default role
+        user_id = _settings.TEST_USER_ID
+        access_token, _ = create_access_token(
+            user_id=user_id, username=username, roles=roles, email=_settings.TEST_USER_EMAIL
+        )
+        refresh_token, _ = create_refresh_token(user_id=user_id)
+        return TokenPair(access_token=access_token, refresh_token=refresh_token)
+
+    # Default demo behavior for other users (replace with real verification in production)
     roles = ["admin"] if username.lower() == "admin" else ["agent"]
     user_id = "00000000-0000-0000-0000-000000000001" if "admin" in roles else "00000000-0000-0000-0000-000000000002"
 
@@ -632,15 +647,21 @@ def refresh_token(refresh_token: str = Query(..., description="Refresh token")):
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid refresh token subject")
 
-        # For demo, infer username/roles from whether it's admin/user id above
+        # For demo/test:
         is_admin = user_id.endswith("1")
-        username = "admin" if is_admin else "agent"
-        roles = ["admin"] if is_admin else ["agent"]
+        if _settings.AUTH_ALLOW_TEST_USER and user_id == _settings.TEST_USER_ID:
+            username = _settings.TEST_USER_EMAIL
+            roles = ["agent"]
+            email = _settings.TEST_USER_EMAIL
+        else:
+            username = "admin" if is_admin else "agent"
+            roles = ["admin"] if is_admin else ["agent"]
+            email = None  # type: ignore
 
         # Rotate refresh token, invalidate the old one
         TOKEN_BLOCKLIST.add(jti)
 
-        new_access, _ = create_access_token(user_id=user_id, username=username, roles=roles)
+        new_access, _ = create_access_token(user_id=user_id, username=username, roles=roles, email=email)
         new_refresh, new_refresh_claims = create_refresh_token(user_id=user_id)
         return TokenPair(access_token=new_access, refresh_token=new_refresh)
     except jwt.ExpiredSignatureError:
@@ -702,8 +723,8 @@ def me(user: AuthUser = Depends(jwt_auth_dependency)):
 
     Returns basic profile built from JWT roles.
     """
-    username = "admin" if "admin" in user.roles else "agent"
-    return User(id=user.user_id, username=username, email=None, roles=user.roles)
+    preferred_username = user.username or ("admin" if "admin" in user.roles else "agent")
+    return User(id=user.user_id, username=preferred_username, email=user.email, roles=user.roles)
 
 
 # ===========================

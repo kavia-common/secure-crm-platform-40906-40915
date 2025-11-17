@@ -53,6 +53,11 @@ class AppSettings(BaseSettings):
     # Feature flags
     ENABLE_MIGRATIONS: bool = Field(default=False, description="Run migrations on startup")
 
+    # Auth demo/test flags
+    AUTH_ALLOW_TEST_USER: bool = Field(default=True, description="Allow test login bypass for TEST_USER_EMAIL in development")
+    TEST_USER_EMAIL: str = Field(default="test@gmail.com", description="Email that bypasses password verification when AUTH_ALLOW_TEST_USER is true")
+    TEST_USER_ID: str = Field(default="test_user_id", description="Stable subject (sub) for the test user")
+
     # Derived helpers
     def cors_origins_list(self) -> List[str]:
         """
