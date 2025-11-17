@@ -70,3 +70,7 @@ sequenceDiagram
 
 ## Traceability
 - RFP: Information security, audit/compliance, role-based data access
+
+## Repository References
+- Backend scaffolding and OpenAPI generation: crm_backend/src/api/main.py, crm_backend/src/api/generate_openapi.py
+- Database setup and policies: crm_database/startup.sh, backup_db.sh, restore_db.sh

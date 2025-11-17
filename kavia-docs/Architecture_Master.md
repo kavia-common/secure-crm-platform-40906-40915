@@ -1,19 +1,20 @@
 # Secure CRM Platform — Master Architecture and Design
 
 ## Document Control
-- Version: 1.0.0
+- Version: 1.1.0
 - Date: 2025-11-17
 - Owners: Architecture Team
 - Status: Draft
 - Scope: Secure CRM application spanning React frontend, FastAPI backend, and PostgreSQL database
+- Sources: RFP_CRM_Omnichannel_Ticketing_system_1.pdf; current repository code across frontend/backend/database
 
 ## 1. System Overview
 The Secure CRM application is a multi-container platform providing omni-channel customer service, ticketing, and analytics for BFSI-grade operations. It includes Customer 360, service request and complaint management, workflow automation, BOT/CTI/social integrations, dashboards, reporting, strong security controls, audit, and compliance alignment. The current codebase includes:
-- Frontend: React (SPA), basic scaffold with theme toggle
+- Frontend: React (SPA), minimal scaffold with theme toggle
 - Backend: FastAPI, CORS enabled, health endpoint and OpenAPI export tooling
-- Database: PostgreSQL setup scripts, backup/restore scripts, and a general-purpose DB visualizer
+- Database: PostgreSQL setup/startup scripts, backup/restore scripts, and an optional DB visualizer
 
-This document consolidates the RFP functional and non-functional requirements with the present repository state to define a complete, actionable architecture and module-level design baseline.
+This document consolidates the RFP functional and non-functional requirements with the present repository state to define a complete, actionable architecture and module-level design baseline. Where features are future work, the document provides design placeholders aligned with the RFP.
 
 ## 2. Container Architecture
 The solution is composed of three containers: frontend, backend, and database. The backend is the central orchestrator integrating external channels and internal systems, while the frontend provides UX for agents and supervisors. The database persists customer, case, workflow, and audit data.
@@ -22,12 +23,12 @@ The solution is composed of three containers: frontend, backend, and database. T
 C4Context
     title "C4 - Context"
     Person(agent, "Agent User", "Contact center agent/supervisor")
+    Person_Ext(customer, "Customer", "End-customer using omni-channel")
     System_Boundary(crm, "Secure CRM") {
       System(web, "React Frontend", "SPA interface")
       System(api, "FastAPI Backend", "REST and WebSocket APIs")
       SystemDb(db, "PostgreSQL", "Operational data store")
     }
-    Person_Ext(customer, "Customer", "End-customer using omni-channel")
     System_Ext(cti, "CTI/Dialer", "On-prem integrated dialer")
     System_Ext(bot, "BOT Platform", "Chatbot framework")
     System_Ext(social, "Social Platforms", "Twitter/Facebook/Instagram APIs")
@@ -61,12 +62,12 @@ C4Container
 ```
 
 ## 3. Module-by-Module Design
-Each module includes purpose, scope, responsibilities, inputs/outputs, data models, APIs, workflows, error handling, security and compliance, and non-functional requirements.
+Each module includes purpose, scope, responsibilities, inputs/outputs, data models, APIs, workflows, error handling, security and compliance, and non-functional requirements. Refer to module specs in kavia-docs/modules for detailed drill-downs.
 
 ### 3.1 Authentication & Authorization
 - Purpose: Provide secure access (RBAC), session management, and token handling
-- Scope: Login, MFA (optional), refresh, role-policy mapping (agent, supervisor, auditor, admin)
-- Responsibilities: Identity verification, access token issuance, policy enforcement
+- Scope: Login, refresh, logout, MFA (per RFP mobility and offline security), role-policy mapping (agent, supervisor, auditor, admin)
+- Responsibilities: Identity verification, token issuance/rotation, policy enforcement
 - Inputs: Credentials/identity assertions; Outputs: JWT/OAuth2 tokens; Audit logs for access
 - Data Models:
   - users(id, username, email, phone, status, mfa_enabled, created_at)
@@ -74,13 +75,11 @@ Each module includes purpose, scope, responsibilities, inputs/outputs, data mode
   - user_roles(user_id, role_id)
   - permissions(id, resource, action)
   - role_permissions(role_id, permission_id)
+  - sessions(id, user_id, jti, issued_at, expires_at, revoked)
 - APIs (planned; FastAPI):
-  - POST /auth/login
-  - POST /auth/refresh
-  - POST /auth/logout
-  - GET /auth/me
+  - POST /auth/login, POST /auth/refresh, POST /auth/logout, GET /auth/me
 - Workflows:
-  - Sequence: User submits credentials → Backend validates → Token issued → RBAC on each request
+  - User submits credentials → Backend validates → Token issued → RBAC on each request → Audit
 - Error handling: Standardized error payloads, 401/403, lockout and backoff for brute force
 - Security & compliance: OWASP ASVS, password hashing (Argon2/BCrypt), rate limiting, audit
 - NFRs: 99.5% auth service uptime; <300ms p95 token issuance
@@ -95,7 +94,7 @@ sequenceDiagram
     API->>DB: SELECT user + verify hash
     DB-->>API: user row
     API-->>U: 200 {access_token, refresh_token}
-    U->>API: GET /me (Authorization: Bearer)
+    U->>API: GET /auth/me (Authorization: Bearer)
     API->>DB: verify session/jti/roles
     DB-->>API: roles/claims
     API-->>U: 200 profile + roles
@@ -104,20 +103,19 @@ sequenceDiagram
 ### 3.2 Customer 360
 - Purpose: Unified view of customer profiles, accounts, interactions, tickets, and context
 - Scope: Profile lookup, related accounts/policies, interaction history, open SRs/complaints
-- Responsibilities: Aggregate from CRM DB and external systems (EDW, policy systems as future)
+- Responsibilities: Aggregate from CRM DB and external systems (EDW, policy systems future)
 - Inputs: customer_id, phone, email; Outputs: 360 DTO aggregating entities and KPIs
 - Data Models:
   - customers(id, master_customer_no, name, dob, kyc_status, risk_rating, pii_encrypted, ...)
-  - contact_points(id, customer_id, type, value, verified_at)
+  - contact_points(id, customer_id, type, value_enc, verified_at)
   - interactions(id, customer_id, channel, subject, summary, occurred_at, source_ref)
   - relationships(customer_id, related_customer_id, relation_type)
 - APIs:
   - GET /customers/{id}/360
-  - GET /customers: search by phone/email/name
-- Workflows: Resolve identity → gather entities → compute derived signals (e.g., churn risk)
+  - GET /customers?query=
 - Error handling: 404 not found, partial data with warnings if upstream systems degraded
 - Security: Field-level masking, PII encryption at rest, least-privilege views
-- NFRs: p95 < 600ms for 360 load with caching
+- NFRs: p95 < 600ms with caching
 
 ```mermaid
 flowchart LR
@@ -139,11 +137,9 @@ flowchart LR
   - POST /service-requests
   - GET /service-requests/{id}
   - PATCH /service-requests/{id} (status transitions)
-- Workflow:
-  - Intake → classify → assign (skill/rules) → work → resolve → CSAT
 - Error handling: Validation errors, illegal state transitions (409)
 - Security: RBAC (agents vs supervisors), audit on all state changes
-- NFRs: SLA adherence tracking; bulk upload supported later per RFP
+- NFRs: SLA adherence tracking; bulk upload per RFP roadmap
 
 ```mermaid
 stateDiagram-v2
@@ -157,23 +153,20 @@ stateDiagram-v2
 ```
 
 ### 3.4 Complaint Management and Escalation
-- Purpose: Register complaints, manage escalations by SLA tiers, regulatory alignment
+- Purpose: Register complaints, manage escalations by SLA tiers, regulatory alignment (SEBI/IGMS)
 - Data Models:
   - complaints(id, customer_id, category, severity, status, regulator_flag, created_at)
   - complaint_escalations(id, complaint_id, level, escalated_at, to_team, reason)
-- APIs:
-  - POST /complaints
-  - PATCH /complaints/{id}/escalate
+- APIs: POST /complaints, GET /complaints/{id}, PATCH /complaints/{id}, POST /complaints/{id}/escalate
 - Workflow: Register → Assess → Assign → Resolve → Escalate based on SLA/timebox
-- Security: Full audit trail linked to user and timestamp
+- Security: Full audit trail linked to user and timestamp; regulator_flag handling
 
 ### 3.5 Omni-channel Intake
 - Purpose: Intake and normalize interactions from phone (CTI), email, chat, web, social
-- Data Models:
-  - channels(id, name, type)
-  - channel_events(id, channel_id, external_id, payload, normalized, created_at)
-- APIs: Webhook endpoints for email/chat/social; CTI callbacks
+- Data Models: channels, channel_events
+- APIs: POST /webhooks/{channel}, GET /channels, GET /channels/{id}/events
 - Workflows: Event received → validation → normalization → route to SR/complaint or interaction
+- Idempotency and signature verification as per provider
 
 ```mermaid
 sequenceDiagram
@@ -183,54 +176,46 @@ sequenceDiagram
     participant R as Router
     participant DB as PostgreSQL
     Ext->>API: POST /webhooks/{channel}
-    API->>N: validate/normalize
-    N->>R: normalized event
-    R->>DB: insert interaction / create SR
+    API->>N: Validate & normalize
+    N->>R: Normalized event
+    R->>DB: Persist interaction / create SR
     API-->>Ext: 200 OK
 ```
 
 ### 3.6 BOT/CTI/Social Connectors
-- Purpose: Integrate third-party providers
-- Connector abstraction:
-  - table connectors(id, type, name, config_ref, enabled)
-  - connector_runs(id, connector_id, status, started_at, completed_at, error)
-- Protocols: HTTPS REST with OAuth2 for BOT/social; CTI via provider-specific SDKs/APIs; retries and backoff
-- Error handling: Circuit-breakers, retry with exponential backoff; DLQ (dead-letter table) for failed events
+- Purpose: Integrate third-party providers (Knowlarity/Aspect/TeleSoft; social; chatbot)
+- Data Models: connectors, connector_runs, dead_letters
+- Protocols: HTTPS REST with OAuth2; CTI via SDKs/APIs; retries and backoff; quality sampling support
+- Security: Vaulted secrets, scoped tokens, PII redaction in logs
 
 ### 3.7 Knowledge Management
 - Purpose: Agent scripts, FAQs, canned responses, approvals for publishing
-- Data Models:
-  - knowledge_articles(id, title, body_md, status, owner_id, approved_by, version)
-  - canned_responses(id, key, template, locale)
-- APIs: CRUD with workflow; search endpoints
+- Data Models: knowledge_articles, canned_responses
+- APIs: CRUD + workflow; search endpoints
 
 ### 3.8 Workflow Automation
-- Purpose: No/low-code rules for routing and escalations
-- Data Models:
-  - workflows(id, name, definition_json, version, active)
-  - workflow_runs(id, workflow_id, entity_ref, status, started_at, ended_at)
-- Execution: Stateless engine per event; versioned definitions
+- Purpose: Rules-based routing, escalations, reminders (drag-and-drop intent per RFP)
+- Data Models: workflows, workflow_runs
+- APIs: Workflow CRUD; triggers
 
 ### 3.9 Reporting & Analytics
-- Purpose: Dashboards, SLA metrics, NPS/CSAT, agent productivity
-- Data: Precomputed aggregates; potential materialized views; export endpoints (CSV/Excel)
+- Purpose: Dashboards, SLA metrics, NPS/CSAT, agent productivity; exports
+- Data: Precomputed aggregates/materialized views; ad-hoc queries; CSV/Excel
 
 ### 3.10 Audit Logging
 - Purpose: Immutable audit of sensitive operations
-- Data Models:
-  - audit_logs(id, actor_id, action, entity_type, entity_id, diff_json, ip, user_agent, created_at)
-- Controls: Tamper-evident hashing chain (optional); retention per compliance policy
+- Data Models: audit_logs (and optional audit_hash_chain)
+- APIs: GET /audit?filters (restricted), admin exports
+- Compliance: Retention and auditability per RFP info security specs
 
 ## 4. Architecture Diagrams (Component Views)
-Below are component-level views for critical modules.
-
 ```mermaid
 C4Component
     title "Component - Backend (FastAPI)"
     Container(api, "FastAPI Backend", "Python")
     Component(auth, "Auth Service", "JWT/OAuth2, RBAC")
     Component(sr, "SR Service", "SR lifecycle")
-    Component(comp, "Complaints Service", "Escalations")
+    Component(comp, "Complaints Service", "Escalations & IGMS")
     Component(oc, "Omni-Channel Service", "Webhooks/Normalizers")
     Component(conn, "Connectors", "CTI/BOT/Social adapters")
     Component(wf, "Workflow Engine", "Rules/Automation")
@@ -302,7 +287,7 @@ sequenceDiagram
 ### 5.8 Reporting & Analytics
 ```mermaid
 flowchart LR
-  A["Operational tables"] --> B["ETL/Aggregate jobs"]
+  A["Operational tables"] --> B["ETL/Aggregates"]
   B --> C["Materialized views"]
   C --> D["Reports/Dashboards API"]
   D --> E["Frontend charts"]
@@ -326,7 +311,7 @@ erDiagram
 ### 6.2 Schema Outline (initial)
 - customers(id PK, master_customer_no, name, pii_encrypted JSONB, created_at)
 - contact_points(id PK, customer_id FK, type, value_enc, verified_at)
-- interactions(id PK, customer_id FK, channel, subject, summary, occurred_at)
+- interactions(id PK, customer_id FK, channel, subject, summary, occurred_at, source_ref)
 - service_requests(id PK, customer_id FK, type, priority, status, sla_due_at, assigned_to FK users.id)
 - sr_activities(id PK, sr_id FK, action, actor_id FK users.id, notes, created_at)
 - complaints(id PK, customer_id FK, category, severity, status, regulator_flag)
@@ -335,62 +320,66 @@ erDiagram
 - audit_logs(id PK, actor_id FK users.id, action, entity_type, entity_id, diff_json, ip, user_agent, created_at)
 
 ### 6.3 Data Retention & PII Handling
-- PII encryption at rest using pgcrypto or application-layer encryption
-- Field-level masking policies by role
-- Data retention policies per regulator; configurable per table/domain
-- Right-to-erasure workflows where legally applicable, with audit evidence
+- Encryption at rest (e.g., pgcrypto) and application-level for high-risk fields
+- Field-level masking policies by role and context (support auditors’ SoD)
+- Retention policies per regulator; legal hold handling; immutable audit
+- Right-to-erasure workflows where applicable and audit evidence trails
 
 ## 7. Integration Architecture
-- Connectors: Abstraction layer per provider with retry/backoff
+- Connectors: Abstraction layer per provider with retry/backoff and circuit breaking
 - Protocols: HTTPS REST with OAuth2; CTI via on-prem SDK/API; Webhooks for inbound
-- Rate limits: Centralized limiter per connector; 429 handling with jittered exponential backoff
+- Rate limits: Central limiter per connector; 429/backoff with jitter
 - Dead-letter queue: Persist failed payloads with reason and replay tools
 - Idempotency: Idempotency keys for webhook POSTs
+- Regulatory: IGMS/SEBI portal integration interfaces and SLAs
 
 ## 8. Security Architecture
-- RBAC: Role to permission mapping enforced middleware-side
-- Input validation: Pydantic schemas, strict typing; reject unknown fields
+- RBAC & SoD: Role to permission mapping; maker-checker where applicable
+- Input validation: Pydantic schemas; reject unknown fields; strict types
 - Encryption:
-  - In-transit: TLS 1.2+ for all HTTP
-  - At rest: Disk encryption and field-level PII encryption
-- Secrets management: Environment variables sourced from a secrets vault (planned)
-- Audit & monitoring: All admin-sensitive CRUD audited with immutable logs
-- Compliance: Align with SEBI guidance, internal/external audits, VAPT readiness
-- Offline data security: If offline/PWA supported, local encrypted storage and remote wipe
+  - In-transit: TLS 1.2+; HSTS; modern ciphers
+  - At rest: Disk + field-level encryption for PII
+- Secrets management: Environment variables backed by vault/KMS (planned)
+- Audit & monitoring: Immutable audit logs; SIEM integration (RFP: logging/alerts)
+- Compliance: SEBI guidelines; VAPT; internal/external audits; mobile/offline encryption
+- Session management: Short-lived tokens; revoke/blacklist; concurrent session controls
+- DLP considerations: Avoid sensitive data in logs and exports; masking by default
 
 ## 9. Deployment Architecture and Environments
-- Envs: dev, test, staging, prod; isolated DBs and credentials
-- Network: Backend connects to DB over restricted network; frontend served via CDN/edge (future)
-- Availability: Target 99.5% uptime; no single point of failure, DR aligned
-- Containerization: Each service packaged and orchestrated (future; currently local scripts)
+- Environments: dev, test, staging, prod with isolated DBs and credentials
+- Network: Backend→DB over restricted network; frontend served statically via CDN/edge (future)
+- Availability: Target 99.5% uptime; no single point of failure; HA posture and DR readiness
+- Containerization: Each service packaged; orchestration roadmap (k8s) for HA & scaling
+- Backups: backup_db.sh, restore_db.sh operationalized; WAL archiving for RPO targets
 
 ## 10. Observability
-- Logs: Structured JSON logging with correlation IDs; no sensitive data in logs
-- Metrics: Request latency, error rates, SLA breaches, connector health
-- Traces: Distributed tracing (OpenTelemetry) planned
-- SLOs: API p95 < 300ms auth, < 600ms 360; 99.5% availability
+- Logs: Structured JSON with correlation IDs; scrub PII
+- Metrics: Request latency, error rates, SLA breaches, queue depths, connector health
+- Traces: OpenTelemetry instrumentation roadmap
+- SLOs: API p95 < 300ms auth, < 600ms 360; 99.5% availability; connector availability > 99%
 
 ## 11. Migration/DR/BCP
-- Migration: Data migration with validation and reconciliation reports
-- DR: RPO ≤ 15 minutes, RTO ≤ 2 hours; periodic drills
-- Backups: Daily full, hourly WAL/incremental; restore runbooks (backup_db.sh, restore_db.sh present)
+- Migration: Data migration phases; validation and reconciliation; cutover plan
+- DR: RPO ≤ 15 min, RTO ≤ 2 hours; periodic drills; passive site readiness
+- BCP: Offline capabilities for mobile/agents with encrypted local cache; sync conflict policies
 
 ## 12. Open Questions & Assumptions
 - Assumptions:
   - CTI provider exposes API compatible with integration patterns noted
-  - Social/BOT platforms allow necessary scopes
-  - Regulatory portal integration specs available
+  - Social/BOT platforms allow necessary scopes and webhooks
+  - Regulatory portal integration specs available for IGMS
 - Open Questions:
-  - Finalize identity provider and MFA method
-  - Define exact data retention durations per entity
-  - Confirm on-prem vs cloud deployment targets and KMS selection
+  - Finalize identity provider and MFA method and device policies
+  - Define exact data retention durations per entity (per SEBI/audit)
+  - Confirm on-prem vs cloud target and KMS selection; jurisdictional constraints
 
 ## 13. Traceability
-- RFP functional requirements mapped to modules 3.1–3.10
-- SEBI/compliance requirements addressed in sections 8, 11
+- RFP functional requirements: Customer 360, SR/Complaints, Omni-channel, BOT/CTI, Workflow, Reporting (Sections: Annexure I/II)
+- Information Security specifications: Reflected in Sections 8, 10, 11
+- Architecture constraints and SLAs: Section 3, 7, 9, 10 align with RFP Architecture/SLAs
 
 ## 14. References
-- FastAPI backend health and OpenAPI generator in codebase
-- PostgreSQL startup/backup/restore scripts
-- React frontend scaffold with theme toggle
+- Backend: FastAPI health and OpenAPI generator (src/api/main.py, src/api/generate_openapi.py)
+- Database: PostgreSQL startup/backup/restore scripts (startup.sh, backup_db.sh, restore_db.sh)
+- Frontend: React scaffold (theme toggle) as baseline for UI
 

@@ -32,3 +32,7 @@ Create immutable audit trails for sensitive and operational actions across the p
 
 ## Traceability
 - RFP: Full audit and compliance readiness
+
+## Repository References
+- Backend baseline: crm_backend/src/api/main.py
+- Database operations and backup policies: crm_database/startup.sh, backup_db.sh, restore_db.sh

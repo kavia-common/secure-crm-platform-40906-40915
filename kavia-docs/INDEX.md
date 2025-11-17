@@ -14,7 +14,18 @@
   - kavia-docs/modules/08-Workflow_Automation.md
   - kavia-docs/modules/09-Reporting_Analytics.md
   - kavia-docs/modules/10-Audit_Logging.md
+  - kavia-docs/modules/11-Data_Architecture.md
+  - kavia-docs/modules/12-Integration_Architecture.md
+  - kavia-docs/modules/13-Security_Architecture.md
+  - kavia-docs/modules/14-Deployment_And_Observability.md
+
+## Cross-Cutting Architecture
+- Data Architecture, ERD, and Retention: see Architecture_Master.md §6
+- Integration Architecture: see Architecture_Master.md §7
+- Security Architecture (SEBI, InfoSec, VAPT): see Architecture_Master.md §8
+- Deployment & Environments: see Architecture_Master.md §9
+- Observability (Logs/Metrics/Traces/SLOs): see Architecture_Master.md §10
+- Migration/DR/BCP: see Architecture_Master.md §11
 
 ## Navigation
-Use this index to access the master architecture and individual module design specs. Each module document includes purpose, scope, data models, APIs, workflows, error handling, security, NFRs, and diagrams.
-
+Use this index to access the master architecture and individual module design specs. Each module document includes purpose, scope, data models, APIs, workflows, error handling, security, NFRs, and diagrams. The master document contains C4 diagrams (Context, Container, Component) and sequence/flow charts for key journeys mapped to RFP sections.

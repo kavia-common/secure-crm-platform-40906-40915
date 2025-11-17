@@ -28,14 +28,18 @@ Log, track, resolve, and escalate customer complaints with regulatory alignment.
 ## Workflow
 ```mermaid
 flowchart TD
-  A["Open Complaint"] --> B{"SLA time left?"}
+  A["Open Complaint"] --> B{"Within SLA window?"}
   B -- Yes --> C["Work & Update"]
   C --> D{"Resolved?"}
-  D -- Yes --> E["Close"]
+  D -- Yes --> E["Close + CSAT"]
   D -- No --> B
-  B -- No --> F["Escalate to next level"]
-  F --> C
+  B -- No --> F["Escalate to next level (per policy)"]
+  F --> G["Notify stakeholders + update IGMS if regulator_flag"]
+  G --> C
 ```
+
+### Regulatory Integration (IGMS/SEBI)
+Complaints marked with regulator_flag follow an augmented flow where status updates and resolutions are synchronized with the regulator’s portal using secure server-to-server APIs. All payloads and responses are fully audited; no PII is logged. SLA timers align with regulator timelines and trigger automated escalations as defined by Annexure II.
 
 ## Error Handling
 - Invalid categories or unknown customer → 400

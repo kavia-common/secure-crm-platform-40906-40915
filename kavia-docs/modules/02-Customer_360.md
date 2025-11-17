@@ -47,3 +47,7 @@ flowchart LR
 
 ## Traceability
 - RFP: Case 360 view, history visibility, multiple account/policy display
+
+## Repository References
+- Backend baseline: crm_backend/src/api/main.py (service entry)
+- Database scripts (for schema evolution): crm_database/startup.sh; refer to Data Architecture module for schema outline

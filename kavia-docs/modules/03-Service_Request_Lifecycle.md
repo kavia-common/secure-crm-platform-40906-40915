@@ -53,3 +53,7 @@ stateDiagram-v2
 
 ## Traceability
 - RFP: Auto-flow, queueing, reminders, skill-based assignment
+
+## Repository References
+- Backend baseline: crm_backend/src/api/main.py
+- Data model extensions to be added per Data Architecture module
