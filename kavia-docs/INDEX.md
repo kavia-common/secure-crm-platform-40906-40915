@@ -15,12 +15,17 @@
   - kavia-docs/modules/09-Reporting_Analytics.md
   - kavia-docs/modules/10-Audit_Logging.md
   - kavia-docs/modules/11-Data_Architecture.md
+  - kavia-docs/modules/11.1-Data_Lifecycle_and_Retention.md
+  - kavia-docs/modules/11.2-Indexing_and_Performance.md
+  - kavia-docs/modules/11.3-Partitioning_and_Sharding.md
+  - kavia-docs/modules/11.4-Backup_Restore_and_DR.md
+  - kavia-docs/modules/11.5-Data_Security_and_Privacy.md
   - kavia-docs/modules/12-Integration_Architecture.md
   - kavia-docs/modules/13-Security_Architecture.md
   - kavia-docs/modules/14-Deployment_And_Observability.md
 
 ## Cross-Cutting Architecture
-- Data Architecture, ERD, and Retention: see Architecture_Master.md §6
+- Data Architecture, ERD, and Retention: see Architecture_Master.md §6 and modules 11.x
 - Integration Architecture: see Architecture_Master.md §7
 - Security Architecture (SEBI, InfoSec, VAPT): see Architecture_Master.md §8
 - Deployment & Environments: see Architecture_Master.md §9

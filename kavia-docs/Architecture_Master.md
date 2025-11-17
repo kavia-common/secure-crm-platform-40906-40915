@@ -294,21 +294,29 @@ flowchart LR
 ```
 
 ## 6. Data Architecture
-### 6.1 ERD (High-Level)
+### 6.1 Detailed References
+- Data Architecture: kavia-docs/modules/11-Data_Architecture.md
+- Data Lifecycle and Retention: kavia-docs/modules/11.1-Data_Lifecycle_and_Retention.md
+- Indexing and Performance: kavia-docs/modules/11.2-Indexing_and_Performance.md
+- Partitioning and Sharding: kavia-docs/modules/11.3-Partitioning_and_Sharding.md
+- Backup, Restore, and DR: kavia-docs/modules/11.4-Backup_Restore_and_DR.md
+- Data Security and Privacy: kavia-docs/modules/11.5-Data_Security_and_Privacy.md
+
+### 6.2 ERD (High-Level)
 ```mermaid
 erDiagram
-  customers ||--o{ contact_points : has
-  customers ||--o{ interactions : has
-  customers ||--o{ service_requests : raises
-  service_requests ||--o{ sr_activities : logs
-  customers ||--o{ complaints : raises
-  complaints ||--o{ complaint_escalations : triggers
-  users ||--o{ audit_logs : creates
-  roles ||--o{ role_permissions : maps
-  users ||--o{ user_roles : maps
+  customers ||--o{ contact_points : "has"
+  customers ||--o{ interactions : "has"
+  customers ||--o{ service_requests : "raises"
+  service_requests ||--o{ sr_activities : "logs"
+  customers ||--o{ complaints : "raises"
+  complaints ||--o{ complaint_escalations : "triggers"
+  users ||--o{ audit_logs : "creates"
+  roles ||--o{ role_permissions : "maps"
+  users ||--o{ user_roles : "maps"
 ```
 
-### 6.2 Schema Outline (initial)
+### 6.3 Schema Outline (initial)
 - customers(id PK, master_customer_no, name, pii_encrypted JSONB, created_at)
 - contact_points(id PK, customer_id FK, type, value_enc, verified_at)
 - interactions(id PK, customer_id FK, channel, subject, summary, occurred_at, source_ref)
@@ -319,11 +327,18 @@ erDiagram
 - users, roles, user_roles, permissions, role_permissions
 - audit_logs(id PK, actor_id FK users.id, action, entity_type, entity_id, diff_json, ip, user_agent, created_at)
 
-### 6.3 Data Retention & PII Handling
+### 6.4 Data Retention & PII Handling
 - Encryption at rest (e.g., pgcrypto) and application-level for high-risk fields
 - Field-level masking policies by role and context (support auditors’ SoD)
 - Retention policies per regulator; legal hold handling; immutable audit
 - Right-to-erasure workflows where applicable and audit evidence trails
+
+### 6.5 Operational Scripts and Traceability
+- RFP: Data security, audit, retention and DR in Information security specifications (Annexure sections in the attached RFP).
+- Database scripts:
+  - secure-crm-platform-40906-40916/crm_database/startup.sh
+  - secure-crm-platform-40906-40916/crm_database/backup_db.sh
+  - secure-crm-platform-40906-40916/crm_database/restore_db.sh
 
 ## 7. Integration Architecture
 - Connectors: Abstraction layer per provider with retry/backoff and circuit breaking
