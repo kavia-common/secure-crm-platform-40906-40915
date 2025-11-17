@@ -18,6 +18,8 @@ RUN python -m pip install --upgrade pip && \
 
 # Copy application source code
 COPY . /app
+# Note: Database connection details are provided via environment variables at runtime;
+# there is no build-time coupling or file path dependency on any database tooling.
 
 # Expose the service port
 EXPOSE 3001

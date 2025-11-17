@@ -1,6 +1,6 @@
 # CRM Backend (FastAPI)
 
-This container provides the FastAPI backend scaffold for the Secure CRM platform. It avoids any file path coupling to the database container and uses environment variables exclusively for DB configuration.
+This container provides the FastAPI backend scaffold for the Secure CRM platform. It avoids any file path coupling to the database container and uses environment variables exclusively for DB configuration. There are no references to any db_visualizer tools or folders; database connectivity is configured solely via environment variables as shown below.
 
 ## Build
 
