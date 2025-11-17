@@ -11,6 +11,10 @@ from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
+from src.core.settings import get_settings
+from src.core.db import check_db_connection
+from src.api.health import router as health_router
+
 # =========================
 # Common Models and Helpers
 # =========================
@@ -392,20 +396,26 @@ app = FastAPI(
     openapi_tags=openapi_tags,
 )
 
-# Dynamic CORS based on env
-allowed_origins = [o.strip() for o in get_env("CORS_ALLOWED_ORIGINS", "*").split(",") if o.strip()]
-if allowed_origins == ["*"]:
-    allow_origins_conf = ["*"]
-else:
-    allow_origins_conf = allowed_origins
+# Load settings once
+_settings = get_settings()
 
+# Dynamic CORS based on settings
+allowed_origins = _settings.cors_origins_list()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allow_origins_conf,
+    allow_origins=allowed_origins if allowed_origins else ["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Startup probe for DB connectivity (non-fatal in dev)
+@app.on_event("startup")
+async def _startup_probe() -> None:
+    ok = await check_db_connection()
+    # Do not raise here to let app boot even if DB unavailable; readiness will reflect true state.
+    # In production you might choose to log or raise based on policy.
+    _ = ok
 
 
 # ================
@@ -469,18 +479,8 @@ def filter_items(items: List[Dict[str, Any]], filters: Dict[str, str]) -> List[D
 # Health and WS Routers
 # =====================
 
-root_router = APIRouter()
-
-@root_router.get("/", summary="Health Check", tags=["Health"])
-def health_check():
-    """Health check endpoint."""
-    return {"status": "ok"}
-
-
-@root_router.get(f"{API_PREFIX}/health", summary="API Health", tags=["Health"])
-def api_health():
-    """API health endpoint under /api/v1."""
-    return {"status": "ok", "version": app.version}
+# Mount health routes at "/" and "/ready"
+app.include_router(health_router, prefix="")
 
 
 # Simple in-memory pubsub for notifications (per-connection scope)
@@ -508,10 +508,7 @@ notifications_manager = NotifierManager()
 inbox_manager = NotifierManager()
 
 
-@root_router.get(
-    "/ws",
-    include_in_schema=False,
-)
+@app.get("/ws", include_in_schema=False)
 def ws_docs_hint():
     """Return hints for using WebSocket endpoints."""
     return {
@@ -1284,7 +1281,6 @@ def put_preferences(body: Preferences, _: AuthUser = Depends(require_roles("agen
 # Router Registration
 # ======================
 
-app.include_router(root_router)
 app.include_router(auth_router)
 app.include_router(urp_router)
 app.include_router(cust_router)
