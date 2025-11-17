@@ -1,0 +1,23 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.Python
+
+# Environments
+.venv/
+venv/
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# OS files
+.DS_Store
+
+# Local env/config files
+.env
+.env.*.local
